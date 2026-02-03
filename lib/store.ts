@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import { SimulationParams, SimulationStep } from './vifi-amm';
 import { runSimulation, SimulationMetrics } from './simulation-runner';
+import { runBatchMonteCarlo, BatchScenarioResult } from './batch-runner';
 
 type PriceRecord = { date: string; price: number };
 
@@ -14,11 +15,18 @@ interface SimulationState {
     // --- Data State ---
     history: PriceRecord[];     // Raw Oracle Data
     loadingData: boolean;
+    isInitialized: boolean;     // Gatekeeper for running sims
 
     // --- Results State ---
     data: (SimulationStep & { date: string })[]; // Simulation Output
     metrics: SimulationMetrics | null;
     isRunning: boolean;
+
+    // --- Batch State ---
+    batchResults: BatchScenarioResult[];
+    batchRunMetadata: { vfe: string; startYear: number } | null;
+    isBatchRunning: boolean;
+    batchProgress: number;
 
     // --- Actions ---
     setVfe: (vfe: 'NGNv' | 'KESv' | 'ETBv') => void;
@@ -26,42 +34,53 @@ interface SimulationState {
     setParams: (updates: Partial<SimulationParams>) => void;
 
     loadHistoryData: () => Promise<void>;
+    initialize: () => void; // Unlocks the simulator
     run: () => void;
+    runBatch: (mode: 'full' | 'conservative') => Promise<void>;
     reset: () => void;
+    clearBatch: () => void;
 }
 
 export const useSimulationStore = create<SimulationState>((set, get) => ({
     // Initial State
     vfe: 'NGNv',
-    startYear: 2019,
+    startYear: 2023, // Default to recent
     params: {
         initialLiquidityUSD: 1000000,
         initialPremium: 0.15,
         tradeProbForward: 0.5,
         volatility: 0.02,
         numDays: 365,
-        tradesPerDay: 1,
+        tradesPerDay: 30,
         isSmartAgent: false,
         currency: 'NGN',
         feeRate: 0.001
     },
     history: [],
     loadingData: false,
+    isInitialized: false,
+
     data: [],
     metrics: null,
     isRunning: false,
 
+    batchResults: [],
+    batchRunMetadata: null, // New
+    isBatchRunning: false,
+    batchProgress: 0,
+
     // Actions
     setVfe: (vfe) => {
-        set({ vfe });
-        // Auto-update currency param when VFE changes
+        set({ vfe, isInitialized: false });
         const currency = vfe.replace('v', '') as any;
         set((state) => ({ params: { ...state.params, currency } }));
-        // Trigger data reload
         get().loadHistoryData();
     },
 
-    setStartYear: (startYear) => set({ startYear }),
+    setStartYear: (startYear) => {
+        set({ startYear, isInitialized: false });
+        get().reset();
+    },
 
     setParams: (updates) => set((state) => ({
         params: { ...state.params, ...updates }
@@ -72,9 +91,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
         set({ loadingData: true });
 
         try {
-            // Clear old data first
             set({ history: [] });
-
             const curr = vfe.replace('v', '');
             const res = await fetch(`/data/${curr}.json`);
 
@@ -97,14 +114,19 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
         }
     },
 
+    initialize: () => {
+        const { history } = get();
+        if (history.length > 0) {
+            set({ isInitialized: true });
+        }
+    },
+
     run: () => {
-        const { history, startYear, params } = get();
-        if (history.length === 0) return;
+        const { history, startYear, params, isInitialized } = get();
+        if (history.length === 0 || !isInitialized) return;
 
         set({ isRunning: true });
 
-        // Logic moved from page.tsx
-        // Use setTimeout to allow UI to update isRunning state before heavy calc
         setTimeout(() => {
             const targetDate = `${startYear}-01-01`;
             let sIdx = history.findIndex(p => p.date >= targetDate);
@@ -117,10 +139,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
 
             const priceArray = slicedSegment.map(p => p.price);
 
-            // Run Engine
             const { steps, metrics } = runSimulation(params, priceArray);
 
-            // Merge Dates
             const mergedResults = steps.map((step) => ({
                 ...step,
                 date: slicedSegment[step.day]?.date || `Day ${step.day}`
@@ -131,10 +151,46 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
                 metrics: metrics,
                 isRunning: false
             });
-        }, 3000);
+        }, 100);
+    },
+
+    runBatch: async (mode) => {
+        const { history, startYear, params, isInitialized, vfe } = get();
+        if (history.length === 0 || !isInitialized) return;
+
+        set({ isBatchRunning: true, batchResults: [], batchProgress: 0, batchRunMetadata: null });
+
+        const targetDate = `${startYear}-01-01`;
+        let sIdx = history.findIndex(p => p.date >= targetDate);
+        if (sIdx === -1) sIdx = 0;
+
+        const segment = history.slice(sIdx, sIdx + params.numDays);
+        const priceData = segment.map(h => h.price);
+
+        // Wait a tick 
+        await new Promise(r => setTimeout(r, 100));
+
+        const biases = mode === 'conservative' ? [0.2, 0.4] : [0.2, 0.4, 0.6, 0.8];
+
+        const results = await runBatchMonteCarlo(
+            params,
+            priceData,
+            (prog) => set({ batchProgress: prog }),
+            biases
+        );
+
+        set({
+            batchResults: results,
+            batchRunMetadata: { vfe, startYear }, // Snapshot metadata
+            isBatchRunning: false
+        });
     },
 
     reset: () => {
         set({ data: [], metrics: null });
+    },
+
+    clearBatch: () => {
+        set({ batchResults: [], batchRunMetadata: null });
     }
 }));

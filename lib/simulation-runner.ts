@@ -142,9 +142,16 @@ export function runSimulation(params: SimulationParams, priceData: number[]): Si
     // 1. Net Change in LP Valuation
     const netChangeValuation = finalValuation - initialValuation;
 
-    // 2. APY (Assuming 1 year period, otherwise normalize)
-    // APY = (NetChange / Initial)
-    const apy = (netChangeValuation / initialValuation) * 100;
+    // 2. APY (Annualized Simple Interest)
+    // Duration in years
+    const durationDays = Math.max(1, finalStep.day);
+    const years = durationDays / 365;
+
+    // ROI as decimal (e.g. 0.10 for 10% return)
+    const roi = netChangeValuation / initialValuation;
+
+    // Annualized APY as decimal (e.g. 0.05 for 5% APY)
+    const apy = roi / years;
 
     // 3. Extra Collateral (Su - Sr)
     // Initial Extra is usually 0 (Su=Sr).
@@ -154,8 +161,9 @@ export function runSimulation(params: SimulationParams, priceData: number[]): Si
     // 4. Net Change Excl Extra
     const netChangeValuationExclExtra = finalValuationExclExtra - initialValuation;
 
-    // 5. APY Excl Extra
-    const apyExclExtra = (netChangeValuationExclExtra / initialValuation) * 100;
+    // 5. APY Excl Extra (Annualized Decimal)
+    const roiExcl = netChangeValuationExclExtra / initialValuation;
+    const apyExclExtra = roiExcl / years;
 
     // 6. Flows
     // Net Flow = Final Su - Initial Su

@@ -1,3 +1,12 @@
+// VARQ State Machine (matching Python implementation)
+export enum VARQState {
+    S0 = 's0',  // O_R == P_R and C_U == 0 (Equilibrium, no buffer)
+    S1 = 's1',  // O_R > P_R (Positive flux, C_U may be 0 or >0)
+    S2 = 's2',  // O_R == P_R and C_U > 0 (Equilibrium with buffer)
+    S3 = 's3',  // O_R < P_R and C_U > 0 (Negative flux with buffer)
+    S4 = 's4',  // O_R < P_R and C_U == 0 (Negative flux, no buffer)
+}
+
 export type SimulationParams = {
     initialLiquidityUSD: number;
     initialPremium: number;
@@ -193,20 +202,74 @@ export class ViFiAMM {
         const Phi = (oraclePrice > 0) ? Pr / oraclePrice : 1;
         const Omega = (Sr > 0) ? Su / Sr : 1;
 
-        // Lambda Logic
-        // If Phi > 1 (Overpegged) and Omega >= 1 (Solvent), Lambda = 1
-        // Else Lambda = Phi
-        const isFullyBacked = Omega >= 0.999999;
-        const Lambda = (Phi > 1 && isFullyBacked) ? 1 : Phi;
+        // Calculate C_U (over-collateralization buffer)
+        const C_U = Math.max(0, Su - Sr);
 
-        return { Sf, Sr, Su, Pr, Phi, Omega, Lambda };
+        // Detect VARQ state
+        const state = this.detectVARQState(oraclePrice, Pr, C_U);
+
+        // Calculate Lambda using state-aware funding rate
+        const Lambda = this.calculateFundingRate(state, oraclePrice, Pr, Omega);
+
+        return { Sf, Sr, Su, Pr, Phi, Omega, Lambda, C_U, state };
+    }
+
+    private detectVARQState(oracleRate: number, protocolRate: number, bufferUSD: number): VARQState {
+        const epsilon = 0.0001; // Tolerance for equality checks
+        const hasBuffer = bufferUSD > epsilon;
+
+        const O_R = oracleRate;
+        const P_R = protocolRate;
+
+        // Check equilibrium (O_R ≈ P_R)
+        const isEquilibrium = Math.abs(O_R - P_R) < epsilon;
+
+        if (isEquilibrium && !hasBuffer) {
+            return VARQState.S0; // Equilibrium, no buffer
+        } else if (O_R > P_R) {
+            return VARQState.S1; // Positive flux (oracle > protocol)
+        } else if (isEquilibrium && hasBuffer) {
+            return VARQState.S2; // Equilibrium with buffer
+        } else if (O_R < P_R && hasBuffer) {
+            return VARQState.S3; // Negative flux with buffer
+        } else { // O_R < P_R && !hasBuffer
+            return VARQState.S4; // Negative flux, no buffer (CRITICAL)
+        }
+    }
+
+    private calculateFundingRate(
+        state: VARQState,
+        oracleRate: number,
+        protocolRate: number,
+        reserveRatio: number
+    ): number {
+        // Python Logic Alignment (from vfe.py):
+        // FR (Flux Ratio) = P_R / O_R
+        const FR = (oracleRate > 0) ? protocolRate / oracleRate : 10000;
+        const RR = reserveRatio;
+        const epsilon = 0.000001;
+
+        // Logic from vfe.py: funding_rate()
+        // If FR > 1 (Appreciation/Positive Flux in Python terms) AND RR ≈ 1 (No Buffer) -> Return 1
+        if (FR > 1 && Math.abs(RR - 1) < epsilon) {
+            return 1.0;
+        }
+
+        // Otherwise return FR
+        // This means during Depreciation (FR < 1), we return FR (< 1), which builds buffer.
+        return FR;
     }
 
     // Expansion: Forward Swap (Un -> Fe)
     public expansion(amountInUSD: number, oraclePrice: number): { success: boolean, amountOut: number, fee: number } {
-        // Capture Pre-Valuation
+        // Calculate PR for Logic Alignment
+        const preState = this.getDerivedState(oraclePrice);
+        const PR = preState.Pr;
+
+        // Capture Pre-Valuation matching Python (using Pr)
         const preAmmRate = this.reserveFiat / this.reserveUSD;
-        const preTotalRate = oraclePrice + preAmmRate;
+        // Python Valuation uses Pr + AmmRate
+        const preTotalRate = PR + preAmmRate;
         const preValuation = this.getValuation(preTotalRate, preAmmRate);
 
         const fee = amountInUSD * this.feeRate;
@@ -225,8 +288,18 @@ export class ViFiAMM {
         // 1. Minting Component (Fi)
         const Fi = netUSDIn * oraclePrice;
 
-        // 2. Minting Reserves (Ri) with Lambda
+
+        // 2. Minting Reserves (Ri) with Lambda - Equilibrium-Aware Logic
         let Ri = 0;
+
+        // Calculate equilibrium amount (where system returns to O_R = P_R)
+        // U_eq = (S_F - (O_R * S_R)) / (O_R * (λ - 1))
+        let U_eq = 0;
+        if (Math.abs(state.Lambda - 1) > 0.000001) {
+            const numerator = state.Sf - (oraclePrice * state.Sr);
+            const denominator = oraclePrice * (state.Lambda - 1);
+            U_eq = (Math.abs(denominator) > 0.000001) ? numerator / denominator : 0;
+        }
 
         if (state.Lambda > 1) {
             // Edge Case: Lambda > 1 (Using Over-collateralization)
@@ -238,22 +311,50 @@ export class ViFiAMM {
             const denom = state.Lambda - 1;
             const U_del_surplus = (denom > 0.000001) ? overCollat / denom : 0;
 
-            if (netUSDIn > U_del_surplus) {
-                // SPLIT TRANSACTION
-                const U_del_normal = netUSDIn - U_del_surplus;
-
-                const Ri_surplus = U_del_surplus * state.Lambda;
-                const Ri_normal = U_del_normal * 1.0; // Fallback to 1:1
-
-                Ri = Ri_surplus + Ri_normal;
+            // Check if equilibrium is hit BEFORE buffer exhaustion
+            if (U_eq > 0 && U_eq < U_del_surplus) {
+                // Equilibrium comes first (S1 -> S2 transition)
+                if (netUSDIn > U_eq) {
+                    // Split: Part at Lambda, part at 1:1 (equilibrium)
+                    const Ri_eq = U_eq * state.Lambda;
+                    const Ri_normal = (netUSDIn - U_eq) * 1.0;
+                    Ri = Ri_eq + Ri_normal;
+                } else {
+                    // Full amount before equilibrium
+                    Ri = netUSDIn * state.Lambda;
+                }
             } else {
-                // Full amount fits within over-collateralization buffer
+                // Buffer exhaustion comes first (or no equilibrium)
+                if (netUSDIn > U_del_surplus) {
+                    // SPLIT TRANSACTION
+                    const U_del_normal = netUSDIn - U_del_surplus;
+
+                    const Ri_surplus = U_del_surplus * state.Lambda;
+                    const Ri_normal = U_del_normal * 1.0; // Fallback to 1:1
+
+                    Ri = Ri_surplus + Ri_normal;
+                } else {
+                    // Full amount fits within over-collateralization buffer
+                    Ri = netUSDIn * state.Lambda;
+                }
+            }
+        } else if (state.Lambda < 1) {
+            // Negative flux case (Lambda < 1)
+            // Check if equilibrium is hit during this transaction
+            if (U_eq > 0 && netUSDIn > U_eq) {
+                // Split: Part at Lambda < 1, part at 1:1 (equilibrium)
+                const Ri_eq = U_eq * state.Lambda;
+                const Ri_normal = (netUSDIn - U_eq) * 1.0;
+                Ri = Ri_eq + Ri_normal;
+            } else {
+                // Standard Case (Lambda < 1, no equilibrium hit)
                 Ri = netUSDIn * state.Lambda;
             }
         } else {
-            // Standard Case (Lambda <= 1)
-            Ri = netUSDIn * state.Lambda;
+            // Lambda = 1 (Equilibrium state)
+            Ri = netUSDIn * 1.0;
         }
+
 
         // Capture the non-Lambda portion as System Surplus (Backing Buffer)
         const lambdaSurplus = netUSDIn - Ri;
@@ -290,8 +391,13 @@ export class ViFiAMM {
         this.publicFiat += totalOutFiat; // User Wallet Growth (Zf)
 
         // Calc Post-Values for Logging
+        // Re-calculate PR based on new state
+        const postState = this.getDerivedState(oraclePrice);
+        const postPr = postState.Pr;
+
         const postAmmRate = this.reserveFiat / this.reserveUSD;
-        const postTotalRate = oraclePrice + postAmmRate;
+        // Python Valuation uses Pr + AmmRate
+        const postTotalRate = postPr + postAmmRate;
         const postValExcess = this.totalCollateralUSD - this.reserveUSD;
         const postValPool = (this.reserveFiat / postTotalRate) + ((this.reserveUSD * postAmmRate) / postTotalRate);
         const postValHoldings = (this.lpExcessFiat / postTotalRate) + (this.treasuryFiat / postTotalRate);
@@ -342,15 +448,21 @@ export class ViFiAMM {
 
     // Contraction: Reverse Swap (Fe -> Un)
     public contraction(amountInFiat: number, oraclePrice: number, debugCap?: number): { success: boolean, amountOut: number, fee: number } {
-        // Capture Pre-Valuation
+        // Calculate Protocol Rate (Pr) for Logic Alignment
+        const state = this.getDerivedState(oraclePrice);
+        const PR = state.Pr; // Use Protocol Rate, NOT Oracle Price
+
+        // Capture Pre-Valuation matches Python (using Pr)
         const preAmmRate = this.reserveFiat / this.reserveUSD;
-        const preTotalRate = oraclePrice + preAmmRate;
+        // Python Valuation uses Pr + AmmRate
+        // Note: This changes valuation basis from Oracle to Protocol!
+        const preTotalRate = PR + preAmmRate;
         const preValuation = this.getValuation(preTotalRate, preAmmRate);
 
         const Fe = amountInFiat;
         const XR = this.reserveUSD;
         const YF = this.reserveFiat;
-        const PR = oraclePrice;
+        // const PR = oraclePrice; // DELETED - We used real PR above
         const K = this.k;
 
         // Capture Pre-State

@@ -7,7 +7,10 @@ interface FarmReserveBannerProps {
 }
 
 export function FarmReserveBanner({ finalState, initialLiquidityUSD }: FarmReserveBannerProps) {
-    const totalVal = finalState?.lpTotalValue ?? finalState?.lpValuation ?? initialLiquidityUSD;
+    // LP gets ~90% of total liquidity (10% goes to initial user allocation)
+    const lpInitialValue = initialLiquidityUSD * 0.9;
+
+    const totalVal = finalState?.lpTotalValue ?? finalState?.lpValuation ?? lpInitialValue;
     const assetsVal = finalState?.lpAssetsValue ?? totalVal; // Fallback if not tracked
     const feesVal = finalState?.feesCollected ?? 0;
 
@@ -47,44 +50,42 @@ export function FarmReserveBanner({ finalState, initialLiquidityUSD }: FarmReser
                 <div className="text-4xl font-mono text-emerald-400 tracking-tight">
                     ${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
-                {finalState && (
-                    <>
-                        {(() => {
-                            const profit = totalVal - initialLiquidityUSD;
-                            const roi = profit / initialLiquidityUSD;
-                            const duration = finalState.day || 1;
-                            const annualizationFactor = 365 / duration;
-                            const apy = roi * annualizationFactor;
+                {finalState && (() => {
+                    const profit = totalVal - lpInitialValue;
+                    const roi = profit / lpInitialValue;
+                    const duration = finalState.day || 1;
+                    const annualizationFactor = 365 / duration;
+                    const apy = roi * annualizationFactor;
 
-                            const safeVal = totalVal - (finalState.valExcessClaims || 0);
-                            const safeProfit = safeVal - initialLiquidityUSD;
-                            const safeRoi = safeProfit / initialLiquidityUSD;
-                            const safeApy = safeRoi * annualizationFactor;
+                    const safeVal = totalVal - (finalState.valExcessClaims || 0);
+                    const safeProfit = safeVal - lpInitialValue;
+                    const safeRoi = safeProfit / lpInitialValue;
+                    const safeApy = safeRoi * annualizationFactor;
 
-                            return (
-                                <>
-                                    <div className={`text-sm font-mono mt-1 px-2 py-0.5 rounded ${profit >= 0 ? "text-emerald-400 bg-emerald-400/10" : "text-rose-400 bg-rose-400/10"
-                                        }`}>
-                                        {profit >= 0 ? "+" : ""}
-                                        ${profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        <span className="opacity-70 ml-2" title={`ROI: ${(roi * 100).toFixed(2)}% over ${duration} days`}>
-                                            (APY: {(apy * 100).toFixed(2)}%)
-                                        </span>
-                                    </div>
-
-                                    {/* Conservative Valuation (Excl. Buffer) */}
-                                    <div className="text-xs font-mono mt-1 text-amber-500/80 flex items-center gap-2" title="Valuation excluding volatile over-collateralization buffer">
-                                        <span>Excl. Buffer:</span>
-                                        <span>${safeVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                                        <span className={safeProfit >= 0 ? "text-emerald-500/80" : "text-rose-500/80"}>
-                                            (APY: {(safeApy * 100).toFixed(2)}%)
-                                        </span>
-                                    </div>
-                                </>
-                            );
-                        })()}
-                    </>
-                )}
+                    return (
+                        <>
+                            <div className={`text-sm font-mono mt-1 px-2 py-0.5 rounded ${profit >= 0 ? "text-emerald-400 bg-emerald-400/10" : "text-rose-400 bg-rose-400/10"
+                                }`}>
+                                {profit >= 0 ? "+" : ""}${profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                <span className="text-xs ml-2 opacity-70">
+                                    ({profit >= 0 ? "+" : ""}{(roi * 100).toFixed(2)}%)
+                                </span>
+                                <span className="text-xs ml-2 opacity-70">
+                                    (APY: {(apy * 100).toFixed(2)}%)
+                                </span>
+                            </div>
+                            <div className="text-xs font-mono mt-1 px-2 py-0.5 rounded text-amber-400 bg-amber-400/10">
+                                <span className="opacity-70">Excl. Buffer:</span>
+                                <span className="ml-2">
+                                    ${safeVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                </span>
+                                <span className="ml-2 opacity-70">
+                                    (APY: {(safeApy * 100).toFixed(2)}%)
+                                </span>
+                            </div>
+                        </>
+                    );
+                })()}
             </div>
         </div>
     );
