@@ -132,6 +132,69 @@ export default function SimulationDashboard() {
                     />
                   </div>
 
+                  {/* Trade Stats Detail Row */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Expansion Stats */}
+                    <div className="bg-zinc-900/50 border border-emerald-500/10 rounded-xl p-4 relative overflow-hidden">
+                      <div className="flex items-center gap-2 mb-3">
+                        <TrendingUp className="w-4 h-4 text-emerald-500" />
+                        <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Expansion Sizing</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-[10px] text-zinc-500 uppercase mb-1">Average</div>
+                          <div className="text-lg font-mono font-medium text-white">
+                            {(() => {
+                              const vals = expansions.map((l: any) => l.inputUSD || 0);
+                              const avg = vals.length ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : 0;
+                              return formatCompactNumber(avg, '$');
+                            })()}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-zinc-500 uppercase mb-1">Median</div>
+                          <div className="text-lg font-mono font-medium text-white">
+                            {(() => {
+                              const vals = expansions.map((l: any) => l.inputUSD || 0).sort((a: number, b: number) => a - b);
+                              const med = vals.length ? vals[Math.floor(vals.length / 2)] : 0;
+                              return formatCompactNumber(med, '$');
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Contraction Stats */}
+                    <div className="bg-zinc-900/50 border border-red-500/10 rounded-xl p-4 relative overflow-hidden">
+                      <div className="flex items-center gap-2 mb-3">
+                        <TrendingDown className="w-4 h-4 text-red-500" />
+                        <span className="text-xs font-bold text-red-400 uppercase tracking-wider">Contraction Sizing</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="text-[10px] text-zinc-500 uppercase mb-1">Average</div>
+                          <div className="text-lg font-mono font-medium text-white">
+                            {(() => {
+                              const vals = contractions.map((l: any) => l.totalOutputUSD || 0);
+                              const avg = vals.length ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : 0;
+                              return formatCompactNumber(avg, '$');
+                            })()}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-zinc-500 uppercase mb-1">Median</div>
+                          <div className="text-lg font-mono font-medium text-white">
+                            {(() => {
+                              const vals = contractions.map((l: any) => l.totalOutputUSD || 0).sort((a: number, b: number) => a - b);
+                              const med = vals.length ? vals[Math.floor(vals.length / 2)] : 0;
+                              return formatCompactNumber(med, '$');
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Transaction History */}
                   <TransactionHistory logs={allLogs} />
                 </div>

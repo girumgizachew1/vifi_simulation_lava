@@ -202,9 +202,98 @@ export function BatchResults({ results, onClose, currency, startYear }: BatchRes
                                                             <div className="font-mono text-amber-400">{usd(res.stats.avgTotalFees)}</div>
                                                         </div>
                                                     </div>
+
+
+                                                    {/* Detailed Trials Table */}
+                                                    <div className="mt-6 border border-zinc-800 rounded-lg overflow-hidden">
+                                                        <div className="bg-zinc-900/50 px-3 py-2 border-b border-zinc-800 text-[10px] font-bold text-zinc-500 uppercase">
+                                                            Detailed Run Data ({res.trialsData?.length || 0} Trials)
+                                                        </div>
+                                                        <div className="max-h-60 overflow-y-auto">
+                                                            <table className="w-full text-xs text-left">
+                                                                <thead className="bg-zinc-900 text-zinc-500 font-medium border-b border-zinc-800 sticky top-0">
+                                                                    <tr>
+                                                                        <th className="px-3 py-2 w-16">Trial</th>
+                                                                        <th className="px-3 py-2 text-right">Profit (Net LP)</th>
+                                                                        <th className="px-3 py-2 text-right">Net LP Assets</th>
+                                                                        <th className="px-3 py-2 text-right">Net Holdings</th>
+                                                                        <th className="px-3 py-2 text-right">Net AMM</th>
+                                                                        <th className="px-3 py-2 text-right">Net Buffer</th>
+                                                                        <th className="px-3 py-2 text-right">APY</th>
+                                                                        <th className="px-3 py-2 text-right">Net Flow</th>
+                                                                        <th className="px-3 py-2 text-right">Total Flow</th>
+                                                                        <th className="px-3 py-2 text-right">Fees</th>
+                                                                        <th className="px-3 py-2 text-right">Initial TR</th>
+                                                                        <th className="px-3 py-2 text-right">Final TR</th>
+                                                                        <th className="px-3 py-2 text-right">Yf End</th>
+                                                                        <th className="px-3 py-2 text-right">Xr End ($)</th>
+                                                                        <th className="px-3 py-2 text-right">Zf End</th>
+                                                                        <th className="px-3 py-2 text-right">Wf End</th>
+                                                                        <th className="px-3 py-2 text-right">Days</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody className="divide-y divide-zinc-800 bg-zinc-950/30">
+                                                                    {res.trialsData?.map(trial => (
+                                                                        <tr key={trial.id} className="hover:bg-zinc-900/50 transition-colors">
+                                                                            <td className="px-3 py-1.5 font-mono text-zinc-500 text-[10px]">#{trial.id}</td>
+                                                                            <td className={cn("px-3 py-1.5 text-right font-mono", trial.profit >= 0 ? "text-emerald-400" : "text-red-400")}>
+                                                                                {usd(trial.profit)}
+                                                                            </td>
+                                                                            <td className={cn("px-3 py-1.5 text-right font-mono", trial.netLpAssets >= 0 ? "text-emerald-400/80" : "text-red-400/80")}>
+                                                                                {usd(trial.netLpAssets)}
+                                                                            </td>
+                                                                            <td className={cn("px-3 py-1.5 text-right font-mono", trial.netHoldings >= 0 ? "text-emerald-400/60" : "text-red-400/60")}>
+                                                                                {usd(trial.netHoldings)}
+                                                                            </td>
+                                                                            <td className={cn("px-3 py-1.5 text-right font-mono", trial.netAmm >= 0 ? "text-emerald-400/60" : "text-red-400/60")}>
+                                                                                {usd(trial.netAmm)}
+                                                                            </td>
+                                                                            <td className={cn("px-3 py-1.5 text-right font-mono", trial.finalBuffer >= 0 ? "text-emerald-400/60" : "text-red-400/60")}>
+                                                                                {usd(trial.finalBuffer)}
+                                                                            </td>
+                                                                            <td className="px-3 py-1.5 text-right font-mono text-zinc-300">
+                                                                                {(trial.apy * 100).toFixed(2)}%
+                                                                            </td>
+                                                                            <td className={cn("px-3 py-1.5 text-right font-mono", trial.netFlow >= 0 ? "text-emerald-500/70" : "text-red-500/70")}>
+                                                                                {usd(trial.netFlow)}
+                                                                            </td>
+                                                                            <td className="px-3 py-1.5 text-right font-mono text-indigo-400/70">
+                                                                                {usd(trial.totalFlow)}
+                                                                            </td>
+                                                                            <td className="px-3 py-1.5 text-right font-mono text-amber-500/70">
+                                                                                {usd(trial.totalFees)}
+                                                                            </td>
+                                                                            <td className="px-3 py-1.5 text-right font-mono text-zinc-500">
+                                                                                {(trial.initialAmmPrice || 0).toFixed(2)} <span className="opacity-60 text-[10px]">({((trial.initialAmmPrice || 0) - trial.startPrice).toFixed(2)})</span>
+                                                                            </td>
+                                                                            <td className="px-3 py-1.5 text-right font-mono text-zinc-500">
+                                                                                {(trial.finalAmmPrice || 0).toFixed(2)} <span className="opacity-60 text-[10px]">({((trial.finalAmmPrice || 0) - trial.endPrice).toFixed(2)})</span>
+                                                                            </td>
+                                                                            <td className="px-3 py-1.5 text-right font-mono text-zinc-400">
+                                                                                {trial.finalYf?.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                                                            </td>
+                                                                            <td className="px-3 py-1.5 text-right font-mono text-emerald-400/70">
+                                                                                {usd(trial.finalXr || 0)}
+                                                                            </td>
+                                                                            <td className="px-3 py-1.5 text-right font-mono text-zinc-400">
+                                                                                {trial.finalZf?.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                                                            </td>
+                                                                            <td className="px-3 py-1.5 text-right font-mono text-blue-400/70">
+                                                                                {trial.finalWf?.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                                                            </td>
+                                                                            <td className="px-3 py-1.5 text-right text-zinc-500">
+                                                                                {trial.daysRun}
+                                                                            </td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </div>
                                                 </td>
                                             </tr>
-                                        )}
+                                        )
+                                        }
                                     </React.Fragment>
                                 );
                             })}
@@ -212,6 +301,6 @@ export function BatchResults({ results, onClose, currency, startYear }: BatchRes
                     </table>
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

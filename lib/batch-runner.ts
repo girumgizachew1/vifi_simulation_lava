@@ -24,7 +24,16 @@ export type TrialResult = {
     // Flows & Activity
     daysRun: number;
     netFlow: number;
+    netLpAssets: number; // New: Profit excluding Fees
     totalFlow: number;
+    netAmm: number; // New: Pool Valuation Change
+    netHoldings: number; // New: Holdings Valuation Change
+    finalZf: number; // New: Final Holdings Quantity
+    finalYf: number; // New: Final Pool Fiat
+    finalXr: number; // New: Final Pool Reserves
+    finalWf: number; // New: Final Public Fiat
+    initialAmmPrice: number; // New: Initial AMM Price
+    finalAmmPrice: number; // New: Final Internal AMM Price
     txCount: number;
     expCount: number;
     contCount: number;
@@ -122,6 +131,7 @@ export async function runBatchMonteCarlo(
 
         // --- Build Per-Trial Data ---
         const trialsData: TrialResult[] = scenarioResults.map((r, idx) => {
+            const initialStep = r.steps[0];
             const lastStep = r.steps[r.steps.length - 1];
 
             // Pool Breakdown
@@ -142,6 +152,21 @@ export async function runBatchMonteCarlo(
 
             const txs = r.steps.filter(s => s.tradeLog);
 
+            // Calculate Net AMM and Net Holdings
+            // Safe fallback to 0 if metrics are missing
+            const initPool = initialStep?.valPool || 0;
+            const finalPool = lastStep?.valPool || 0;
+            const netAmm = finalPool - initPool;
+
+            const initHoldings = initialStep?.valLpHoldings || 0;
+            const finalHoldings = lastStep?.valLpHoldings || 0;
+            const netHoldings = finalHoldings - initHoldings;
+
+            // Net LP Assets (Aligned with Vifi Excel: Net AMM + Net Holdings)
+            // This represents the Change in Fiat/Inventory Assets excluding Buffer & Fees
+            const totalFees = lastStep.feesCollected || 0;
+            const netLpAssets = netAmm + netHoldings;
+
             return {
                 id: idx + 1,
                 apy: r.metrics.apy,
@@ -154,20 +179,31 @@ export async function runBatchMonteCarlo(
                 finalPoolValFiat: valFiat,
                 finalPoolValRes: valRes,
                 finalHoldingsVal: lastStep.valLpHoldings || 0,
-                totalFees: lastStep.feesCollected || 0,
+                totalFees: totalFees,
 
                 profitExclBuffer,
                 apyExclBuffer: apyExcl,
 
                 daysRun: durationDays, // Use Actual Days
                 netFlow: r.metrics.netFlow,
+                netLpAssets: netLpAssets,
                 totalFlow: r.metrics.totalFlow,
                 txCount: txs.length,
                 expCount: txs.filter(s => s.tradeLog?.type === 'EXPANSION').length,
                 contCount: txs.filter(s => s.tradeLog?.type === 'CONTRACTION').length,
 
+                // Net Changes
+                netAmm,
+                netHoldings,
+                finalZf: lastStep.lpExcessFiat || 0,
+                finalYf: lastStep.reserveFiat || 0,
+                finalXr: lastStep.reserveUSD || 0,
+                finalWf: lastStep.walletFiat || 0,
+                finalAmmPrice: lastStep.ammPrice || 0,
+
                 // Debug Market Data
                 startPrice: r.steps[0]?.oraclePrice || 0,
+                initialAmmPrice: initialStep?.ammPrice || 0,
                 endPrice: lastStep.oraclePrice
             };
         });

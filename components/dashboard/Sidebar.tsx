@@ -233,6 +233,60 @@ export function Sidebar() {
                         </div>
                     </div>
 
+                    {/* Logic Controls - Hidden for Demo */}
+                    {false && (
+                        <div className="pt-2 border-t border-white/5 space-y-3">
+                            <div className="flex items-center gap-2 mb-2">
+                                <FlaskConical className="w-4 h-4 text-pink-400" />
+                                <span className="text-sm font-bold text-zinc-200">Logic Audit Fixes</span>
+                            </div>
+
+                            {/* Contraction Mode */}
+                            <div className="space-y-1">
+                                <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Contraction Volume</span>
+                                <div className="grid grid-cols-3 gap-1">
+                                    {[
+                                        { id: 'ratchet', label: 'Ratchet' },
+                                        { id: 'fixed-50k', label: 'Fix $50k' },
+                                        { id: 'fixed-100k', label: 'Fix $100k' }
+                                    ].map((mode) => (
+                                        <button
+                                            key={mode.id}
+                                            onClick={() => setParams({ contractionMode: mode.id as any })}
+                                            className={cn(
+                                                "px-2 py-1.5 rounded text-[10px] font-bold border transition-colors",
+                                                (params.contractionMode || 'ratchet') === mode.id
+                                                    ? "bg-pink-500/10 border-pink-500/50 text-pink-400"
+                                                    : "bg-zinc-800 border-transparent text-zinc-500 hover:text-zinc-300"
+                                            )}
+                                        >
+                                            {mode.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Zombie Check */}
+                            <div className="flex items-center justify-between bg-zinc-800/50 p-2 rounded-lg border border-white/5">
+                                <span className="text-[10px] text-zinc-400">Prevent Zombie Trades</span>
+                                <button
+                                    onClick={() => setParams({ preventZombieTrades: !params.preventZombieTrades })}
+                                    className={cn(
+                                        "relative inline-flex h-4 w-8 items-center rounded-full transition-colors",
+                                        params.preventZombieTrades ? "bg-pink-500" : "bg-zinc-700"
+                                    )}
+                                >
+                                    <span
+                                        className={cn(
+                                            "inline-block h-3 w-3 transform rounded-full bg-white transition-transform",
+                                            params.preventZombieTrades ? "translate-x-4" : "translate-x-1"
+                                        )}
+                                    />
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     <button
                         onClick={handleRun}
                         disabled={!isInitialized || isRunning || isBatchRunning}

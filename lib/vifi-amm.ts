@@ -18,6 +18,8 @@ export type SimulationParams = {
     currency: 'NGN' | 'KES' | 'ETB' | 'Custom';
     feeRate: number;
     seed?: number;
+    contractionMode?: 'ratchet' | 'fixed-50k' | 'fixed-100k';
+    preventZombieTrades?: boolean;
 };
 
 // Trade Detail Log
@@ -198,7 +200,7 @@ export class ViFiAMM {
         const Sr = this.reserveUSD; // Token Supply
         const Su = this.totalCollateralUSD; // Actual Collateral
 
-        const Pr = (Sr > 0) ? Sf / Sr : 0;
+        const Pr = (Sr > 0) ? Math.max(0, Sf) / Sr : 0; // Clamp Pr to 0 to prevent negative rate explosion
         const Phi = (oraclePrice > 0) ? Pr / oraclePrice : 1;
         const Omega = (Sr > 0) ? Su / Sr : 1;
 
@@ -501,14 +503,38 @@ export class ViFiAMM {
         }
 
         // Solve for Rs
-        const sqrtD = Math.sqrt(discriminant);
-        const Rs1 = (-b + sqrtD) / (2 * a);
-        const Rs2 = (-b - sqrtD) / (2 * a);
-
         let Rs = 0;
-        if (Rs1 > 0 && Rs1 < XR) Rs = Rs1;
-        else if (Rs2 > 0 && Rs2 < XR) Rs = Rs2;
-        else Rs = Math.min(Rs1, Rs2);
+
+        // SAFEGUARD: Handle Linear Case (a almost 0) or Negative Case (a < 0)
+        // If a ~ 0, equation is bx + c = 0 -> x = -c/b
+        if (Math.abs(a) < 1e-9) {
+            if (Math.abs(b) > 1e-9) {
+                Rs = -c / b;
+            } else {
+                Rs = 0; // Degenerate
+            }
+        } else {
+            // Quadratic
+            // If a IS negative (shouldn't be with Pr clamp, but for safety)
+            const sqrtD = Math.sqrt(discriminant);
+            const Rs1 = (-b + sqrtD) / (2 * a);
+            const Rs2 = (-b - sqrtD) / (2 * a);
+
+            if (Rs1 > 0 && Rs1 < XR) Rs = Rs1;
+            else if (Rs2 > 0 && Rs2 < XR) Rs = Rs2;
+            else {
+                // Pick the valid positive root
+                const valid1 = Rs1 > 0;
+                const valid2 = Rs2 > 0;
+                if (valid1 && valid2) Rs = Math.min(Rs1, Rs2);
+                else if (valid1) Rs = Rs1;
+                else if (valid2) Rs = Rs2;
+                else Rs = 0;
+            }
+        }
+
+        // PHYSICAL CLAMP: Cannot drain more than exists
+        Rs = Math.max(0, Math.min(Rs, XR));
 
         const grossUSDOut = Rs;
         const fee = grossUSDOut * this.feeRate;

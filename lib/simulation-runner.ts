@@ -51,6 +51,7 @@ export function runSimulation(params: SimulationParams, priceData: number[]): Si
 
     // Initial State capture
     const initialState = amm.getState(0, initialOraclePrice);
+    steps.push(initialState); // Capture Pre-Trade State as Step 0
 
     let currentOraclePrice = initialOraclePrice;
 
@@ -101,18 +102,39 @@ export function runSimulation(params: SimulationParams, priceData: number[]): Si
                 // Contraction: Input is Fiat (Selling TTDv)
                 const currentState = amm.getState(day, currentOraclePrice);
 
-                // Spec Update: Use ACTUAL User Holdings (Wf) for sizing, not theoretical 10%.
-                const userTheoreticalShare = currentState.walletFiat;
+                // --- ZOMBIE TRADER CHECK (Price Sensitivity) ---
+                if (params.preventZombieTrades) {
+                    // Logic: If Total Rate (Oracle + Pool) is significantly higher than Fair Value,
+                    // users should NOT sell Fiat (Reverse Swap). They should hold or arb.
+                    // Fair Value ~ Oracle * (1 + InitialPremium)
+                    // Current Total ~ Oracle + AMM_Price
+                    // If Current >> Fair, it means AMM Price is very high (Fiat is cheap/devalued in pool).
+                    // Selling Fiat now is a "Panic Sell" at bad rates. 
 
-                // 1. Determine Target Fiat Exit Size
-                const rawFiat = betaSample * 0.5 * userTheoreticalShare;
-                debugCap = 0.5 * userTheoreticalShare;
+                    const currentTotalRate = currentOraclePrice + currentState.ammPrice;
+                    const fairTotalRate = currentOraclePrice * (1 + params.initialPremium);
+                    const threshold = fairTotalRate * 1.05; // 5% tolerance
+
+                    if (currentTotalRate > threshold) {
+                        // Rate is too high (Bad for Reverse Swap). Skip trade.
+                        continue;
+                    }
+                }
+
+                // --- CONTRACTION VOLUME LOGIC ---
+                // Default: Ratchet (Shrinking)
+                // 50% of Current Wallet Balance
+                const maxBaseFiat = 0.5 * currentState.walletFiat;
+
+
+                // Sampling
+                const rawFiat = betaSample * maxBaseFiat;
+                debugCap = maxBaseFiat;
 
                 // 2. Minimum Clip (0.01 Fiat)
                 amount = Math.max(0.01, rawFiat);
 
                 // 3. Physical Constraint
-                // Can't sell more than they actually hold (Zf)
                 amount = Math.min(amount, currentState.walletFiat);
             }
 

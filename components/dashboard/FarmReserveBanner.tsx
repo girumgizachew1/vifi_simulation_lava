@@ -21,11 +21,11 @@ export function FarmReserveBanner({ finalState, initialLiquidityUSD }: FarmReser
                 <div className="text-sm text-zinc-500 mt-2 space-y-1">
                     <div className="flex items-center gap-2">
                         <span className="text-zinc-400">Assets Breakdown:</span>
-                        <span className="text-zinc-300 font-mono">${assetsVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                        <span className="text-zinc-300 font-mono">${assetsVal.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</span>
                     </div>
                     <div className="text-xs text-zinc-600 font-mono pl-4">
-                        = Buffer (${(finalState?.valExcessClaims || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })})
-                        + Pool (${(finalState?.valPool || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })})
+                        = Buffer (${(finalState?.valExcessClaims || 0).toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })})
+                        + Pool (${(finalState?.valPool || 0).toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })})
                         <span className="text-zinc-600 ml-1 opacity-70">
                             [{(() => {
                                 if (!finalState) return '';
@@ -35,10 +35,10 @@ export function FarmReserveBanner({ finalState, initialLiquidityUSD }: FarmReser
                                 const Ar = Tr - Or;
                                 const valYf = finalState.reserveFiat / Tr;
                                 const valXr = (finalState.reserveUSD * Ar) / Tr;
-                                return `F:$${Math.round(valYf / 1000)}k/R:$${Math.round(valXr / 1000)}k`;
+                                return `F:${Math.round(valYf).toLocaleString()}/R:$${Math.round(valXr).toLocaleString()}`;
                             })()}]
                         </span>
-                        + Holdings (${(finalState?.valLpHoldings || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })})
+                        + Holdings (${(finalState?.valLpHoldings || 0).toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })})
                     </div>
                     <div className="flex items-center gap-2 pt-1 border-t border-zinc-800/50">
                         <span className="text-zinc-400">Accumulated Fees:</span>
@@ -66,7 +66,7 @@ export function FarmReserveBanner({ finalState, initialLiquidityUSD }: FarmReser
                         <>
                             <div className={`text-sm font-mono mt-1 px-2 py-0.5 rounded ${profit >= 0 ? "text-emerald-400 bg-emerald-400/10" : "text-rose-400 bg-rose-400/10"
                                 }`}>
-                                {profit >= 0 ? "+" : ""}${profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                {profit >= 0 ? "+" : ""}${profit.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}
                                 <span className="text-xs ml-2 opacity-70">
                                     ({profit >= 0 ? "+" : ""}{(roi * 100).toFixed(2)}%)
                                 </span>
@@ -77,7 +77,7 @@ export function FarmReserveBanner({ finalState, initialLiquidityUSD }: FarmReser
                             <div className="text-xs font-mono mt-1 px-2 py-0.5 rounded text-amber-400 bg-amber-400/10">
                                 <span className="opacity-70">Excl. Buffer:</span>
                                 <span className="ml-2">
-                                    ${safeVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    ${safeVal.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}
                                 </span>
                                 <span className="ml-2 opacity-70">
                                     (APY: {(safeApy * 100).toFixed(2)}%)
